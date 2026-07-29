@@ -196,6 +196,65 @@ python connecteur_wazuh_alertes.py
 
 ---
 
+## Moteur de scoring ReCyF
+
+**Fichier :** `moteur_scoring.py`  
+**Sortie :** rapport terminal + `rapport_conformite.json`
+
+Lit les trois fichiers produits par les connecteurs et évalue la conformité
+objectif par objectif selon 6 blocs fonctionnels du référentiel ReCyF.
+
+> **Note sur la numérotation :** le référentiel ReCyF est encore un document
+> de travail de l'ANSSI. Les identifiants utilisés (`GOV-x`, `IDE-x`, `DET-x`…)
+> sont des codes fonctionnels stables pour ce projet, volontairement génériques
+> plutôt que liés à une version figée du document.
+
+### Prérequis
+
+Avoir lancé les trois connecteurs au préalable :
+
+```bash
+source venv/bin/activate
+python connecteur_glpi.py          # → inventaire.json
+python connecteur_wazuh.py         # → agents_wazuh.json
+python connecteur_wazuh_alertes.py # → alertes_wazuh.json
+```
+
+### Lancer le scoring
+
+```bash
+source venv/bin/activate
+python moteur_scoring.py
+```
+
+Affiche un tableau par bloc dans le terminal et sauvegarde le détail dans
+`rapport_conformite.json`.
+
+### Barème V1
+
+| Statut | Score |
+|---|---|
+| Couvert | 100 % |
+| Partiel | 50 % |
+| Non couvert — connecteur à venir | 0 % |
+| Non couvert — action manuelle requise | 0 % |
+
+### Couverture V1 (données réelles sur infra de test)
+
+| Bloc | Couvert | Partiel | Non couvert |
+|---|---|---|---|
+| Gouvernance | 0 | 0 | 4 |
+| Identification | 0 | 2 | 1 |
+| Protection | 0 | 0 | 5 |
+| Détection | 2 | 0 | 1 |
+| Réponse | 0 | 0 | 3 |
+| Résilience | 0 | 0 | 3 |
+
+Score global V1 : **14.3 %** — honnête, la base de détection Wazuh est en place,
+la gouvernance documentaire et la protection réseau/vulnérabilités restent à couvrir.
+
+---
+
 ## Structure du projet
 
 ```
@@ -203,6 +262,7 @@ nis2-dashboard/
 ├── connecteur_glpi.py             # Connecteur GLPI (inventaire)
 ├── connecteur_wazuh.py            # Connecteur Wazuh (agents)
 ├── connecteur_wazuh_alertes.py    # Connecteur Wazuh (alertes de sécurité agrégées)
+├── moteur_scoring.py              # Moteur de scoring ReCyF (21 objectifs, 6 blocs)
 ├── setup_glpi_connector.sh        # Script de setup GLPI (à exécuter sur le serveur)
 ├── requirements.txt
 ├── .env.example               # Template des variables d'environnement
@@ -217,5 +277,5 @@ nis2-dashboard/
 - [x] Connecteur Wazuh — état des agents
 - [x] Connecteur Wazuh — alertes de sécurité (résumé agrégé, RGPD-compatible)
 - [ ] Connecteur OpenVAS — vulnérabilités
-- [ ] Moteur de scoring ReCyF (20 objectifs)
+- [x] Moteur de scoring ReCyF (21 objectifs, 6 blocs)
 - [ ] Export rapport PDF/HTML
