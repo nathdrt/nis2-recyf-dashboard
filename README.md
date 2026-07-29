@@ -127,13 +127,83 @@ python connecteur_wazuh.py
 
 ---
 
+## Connecteur Wazuh — Alertes
+
+**Fichier :** `connecteur_wazuh_alertes.py`  
+**Sortie :** `alertes_wazuh.json`
+
+Interroge OpenSearch/Indexer Wazuh (port 9200) via des agrégations pour produire
+un résumé statistique des alertes de sécurité sur une fenêtre glissante (24h par défaut).
+
+**Approche RGPD :** aucun document individuel n'est extrait, uniquement des comptages.
+Les champs `data.*` (qui peuvent contenir des noms d'utilisateur) ne sont jamais lus.
+
+### Variables `.env` nécessaires
+
+```
+WAZUH_INDEXER_URL=https://<ip-wazuh>:9200
+WAZUH_INDEXER_USER=readall
+WAZUH_INDEXER_PASSWORD=<mot_de_passe_readall>
+WAZUH_ALERTES_FENETRE_HEURES=24      # optionnel
+WAZUH_ALERTES_OUTPUT=alertes_wazuh.json  # optionnel
+WAZUH_INDEXER_SSH_HOST=wazuh         # optionnel, voir ci-dessous
+```
+
+### Tunnel SSH (cas typique)
+
+OpenSearch Wazuh n'écoute que sur `127.0.0.1:9200` du serveur, pas sur le réseau.
+Si `WAZUH_INDEXER_SSH_HOST` est défini (alias dans `~/.ssh/config`), le connecteur
+crée automatiquement un tunnel SSH et le referme après l'extraction.
+
+Prérequis : une clé SSH sans passphrase configurée vers le serveur Wazuh.
+
+### Trouver le mot de passe du compte `readall`
+
+Le compte `readall` est créé par l'installateur Wazuh. Son mot de passe se trouve dans :
+
+```bash
+ssh <wazuh> "tar xOf /root/wazuh-install-files.tar wazuh-install-files/wazuh-passwords.txt | grep -A1 'indexer_username.*readall'"
+```
+
+### Lancer le connecteur
+
+```bash
+source venv/bin/activate
+python connecteur_wazuh_alertes.py
+```
+
+### Format de sortie
+
+```json
+{
+  "source": "Wazuh-Indexer",
+  "date_extraction": "2026-07-29T...",
+  "periode_heures": 24,
+  "total_alertes": 119,
+  "alertes_niveau_eleve_ou_plus": 2,
+  "par_niveau": [
+    {"niveau": 7, "libelle": "élevé", "nb": 2},
+    {"niveau": 5, "libelle": "moyen", "nb": 4},
+    {"niveau": 3, "libelle": "bas",   "nb": 113}
+  ],
+  "par_regle": [
+    {"regle_id": "550", "niveau": 7, "description": "Integrity checksum changed.", "nb": 2},
+    ...
+  ],
+  "par_agent": [{"agent": "nate", "nb": 119}]
+}
+```
+
+---
+
 ## Structure du projet
 
 ```
 nis2-dashboard/
-├── connecteur_glpi.py         # Connecteur GLPI (inventaire)
-├── connecteur_wazuh.py        # Connecteur Wazuh (agents)
-├── setup_glpi_connector.sh    # Script de setup GLPI (à exécuter sur le serveur)
+├── connecteur_glpi.py             # Connecteur GLPI (inventaire)
+├── connecteur_wazuh.py            # Connecteur Wazuh (agents)
+├── connecteur_wazuh_alertes.py    # Connecteur Wazuh (alertes de sécurité agrégées)
+├── setup_glpi_connector.sh        # Script de setup GLPI (à exécuter sur le serveur)
 ├── requirements.txt
 ├── .env.example               # Template des variables d'environnement
 ├── .env                       # Variables réelles — NE PAS COMMITTER
@@ -145,7 +215,7 @@ nis2-dashboard/
 
 - [x] Connecteur GLPI — inventaire des ordinateurs
 - [x] Connecteur Wazuh — état des agents
-- [ ] Connecteur Wazuh — alertes de sécurité
+- [x] Connecteur Wazuh — alertes de sécurité (résumé agrégé, RGPD-compatible)
 - [ ] Connecteur OpenVAS — vulnérabilités
 - [ ] Moteur de scoring ReCyF (20 objectifs)
 - [ ] Export rapport PDF/HTML
