@@ -6,6 +6,7 @@
 
 # Données générées
 inventaire.json
+agents_wazuh.json
 wazuh_alertes.json
 
 # Python
