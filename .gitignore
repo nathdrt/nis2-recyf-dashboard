@@ -1,0 +1,21 @@
+# Secrets — ne jamais committer
+.env
+
+# Fichiers de travail de l'assistant (contexte local, mémoire de session)
+.claude/
+
+# Données générées
+inventaire.json
+wazuh_alertes.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+
+# Éditeurs
+.vscode/
+.idea/
+*.swp
