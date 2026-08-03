@@ -8,6 +8,7 @@
 inventaire.json
 agents_wazuh.json
 alertes_wazuh.json
+vulnerabilites_openvas.json
 rapport_conformite.json
 
 # Python

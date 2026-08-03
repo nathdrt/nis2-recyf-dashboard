@@ -196,6 +196,56 @@ python connecteur_wazuh_alertes.py
 
 ---
 
+## Connecteur OpenVAS
+
+**Fichier :** `connecteur_openvas.py`  
+**Sortie :** `vulnerabilites_openvas.json`
+
+Récupère les tâches de scan et les résultats de vulnérabilités via le protocole
+GMP natif (bibliothèque `python-gvm`). `gvmd` ne parle GMP que via un socket
+Unix distant (pas de port TCP exposé) : le connecteur ouvre un tunnel SSH
+(forwarding Unix-vers-Unix, OpenSSH ≥ 6.7) vers ce socket, refermé proprement
+en fin d'exécution.
+
+**⚠️ Voir [`NOTES_OPENVAS.md`](NOTES_OPENVAS.md) avant de créer une tâche de
+scan** — le compte `connecteur-api` (rôle Observer) ne voit **aucune** tâche
+créée par un autre compte tant qu'elle n'a pas été explicitement partagée via
+`modify_task(task_id=..., observers=["connecteur-api"])`. Sans ce partage, le
+connecteur renvoie `nombre_taches: 0` avec un champ `"avertissement"` — à ne
+jamais confondre avec "aucune vulnérabilité détectée".
+
+### Variables `.env` nécessaires
+
+```
+OPENVAS_SSH_HOST=openvas              # alias SSH (~/.ssh/config)
+OPENVAS_SOCKET_REMOTE=/var/lib/docker/volumes/greenbone-community-edition_gvmd_socket_vol/_data/gvmd.sock
+OPENVAS_GMP_USER=connecteur-api
+OPENVAS_GMP_PASSWORD=<mot_de_passe>
+OPENVAS_OUTPUT_FILE=vulnerabilites_openvas.json  # optionnel
+```
+
+### Créer le compte dédié OpenVAS (rôle Observer)
+
+```bash
+docker compose exec -u gvmd gvmd gvmd --create-user=connecteur-api --password='<mot_de_passe>' --role=Observer
+```
+
+Vérifier qu'aucun autre rôle n'est présent :
+
+```bash
+docker compose exec -u gvmd gvmd gvmd --get-users --role=Observer   # doit lister connecteur-api
+docker compose exec -u gvmd gvmd gvmd --get-users --role=Admin      # ne doit PAS lister connecteur-api
+```
+
+### Lancer le connecteur
+
+```bash
+source venv/bin/activate
+python connecteur_openvas.py
+```
+
+---
+
 ## Moteur de scoring ReCyF
 
 **Fichier :** `moteur_scoring.py`  
@@ -262,12 +312,14 @@ nis2-dashboard/
 ├── connecteur_glpi.py             # Connecteur GLPI (inventaire)
 ├── connecteur_wazuh.py            # Connecteur Wazuh (agents)
 ├── connecteur_wazuh_alertes.py    # Connecteur Wazuh (alertes de sécurité agrégées)
+├── connecteur_openvas.py          # Connecteur OpenVAS/Greenbone (vulnérabilités, via GMP)
 ├── moteur_scoring.py              # Moteur de scoring ReCyF (21 objectifs, 6 blocs)
 ├── setup_glpi_connector.sh        # Script de setup GLPI (à exécuter sur le serveur)
 ├── requirements.txt
 ├── .env.example               # Template des variables d'environnement
 ├── .env                       # Variables réelles — NE PAS COMMITTER
 ├── .gitignore
+├── NOTES_OPENVAS.md           # Contraintes du modèle de permissions GMP/Greenbone
 └── README.md
 ```
 
@@ -276,6 +328,7 @@ nis2-dashboard/
 - [x] Connecteur GLPI — inventaire des ordinateurs
 - [x] Connecteur Wazuh — état des agents
 - [x] Connecteur Wazuh — alertes de sécurité (résumé agrégé, RGPD-compatible)
-- [ ] Connecteur OpenVAS — vulnérabilités
+- [x] Connecteur OpenVAS — vulnérabilités
 - [x] Moteur de scoring ReCyF (21 objectifs, 6 blocs)
+- [ ] Intégration OpenVAS dans le moteur de scoring (4e source, toujours V1 à 3 sources)
 - [ ] Export rapport PDF/HTML
