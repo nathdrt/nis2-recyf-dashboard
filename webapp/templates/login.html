@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <title>Connexion — NIS2/ReCyF Dashboard</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="page-login">
+  <div class="login-box">
+    <h1>NIS2/ReCyF Dashboard</h1>
+    {% if erreur %}
+      <p class="erreur">{{ erreur }}</p>
+    {% endif %}
+    <form method="post" action="/login">
+      <label>
+        Identifiant
+        <input type="text" name="username" required autofocus>
+      </label>
+      <label>
+        Mot de passe
+        <input type="password" name="password" required>
+      </label>
+      <button type="submit">Se connecter</button>
+    </form>
+  </div>
+</body>
+</html>

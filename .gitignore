@@ -18,6 +18,10 @@ __pycache__/
 venv/
 .venv/
 
+# Webapp (dashboard FastAPI) — secrets et données locales, jamais commités
+webapp/data/
+webapp/secrets/
+
 # Éditeurs
 .vscode/
 .idea/
