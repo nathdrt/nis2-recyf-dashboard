@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <title>Exécutions — NIS2/ReCyF Dashboard</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <span>Historique des exécutions</span>
+    <div>
+      <a href="/dashboard">Tableau de bord</a>
+      <a href="/connecteurs">Connecteurs</a>
+      <a href="/logout">Déconnexion</a>
+    </div>
+  </header>
+  <main>
+    <div class="actions">
+      <form method="post" action="/executions/lancer">
+        <button type="submit" class="bouton">Lancer un scan maintenant</button>
+      </form>
+    </div>
+    <table class="connecteurs">
+      <thead>
+        <tr>
+          <th>Début</th><th>Fin</th><th>Statut</th><th>Score global</th><th>Erreurs</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in executions %}
+        <tr>
+          <td>{{ e.date_debut }}</td>
+          <td>{{ e.date_fin or "—" }}</td>
+          <td>{{ e.statut }}</td>
+          <td>{{ (e.score_global ~ " %") if e.score_global is not none else "—" }}</td>
+          <td>{{ "Oui" if e.erreurs else "Non" }}</td>
+          <td><a href="/executions/{{ e.id }}">Détail</a></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6">Aucune exécution pour le moment.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </main>
+</body>
+</html>

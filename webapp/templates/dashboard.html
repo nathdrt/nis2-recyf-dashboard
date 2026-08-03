@@ -15,6 +15,28 @@
   </header>
   <main>
     <h1>Bienvenue</h1>
+
+    <form method="post" action="/executions/lancer">
+      <button type="submit" class="bouton">Lancer un scan maintenant</button>
+    </form>
+
+    <div class="derniere-execution">
+      {% if derniere %}
+        <p>Dernière exécution : {{ derniere.date_debut }} — <strong>{{ derniere.statut }}</strong></p>
+        {% if derniere.statut == "en_cours" %}
+          <p>Scan en cours, recharge la page dans quelques instants.</p>
+        {% elif derniere.score_global is not none %}
+          <p>Score global : <strong>{{ derniere.score_global }} %</strong></p>
+        {% endif %}
+        {% if derniere.erreurs %}
+          <p class="erreur">Des connecteurs ont échoué pendant ce cycle — voir le détail.</p>
+        {% endif %}
+        <a href="/executions/{{ derniere.id }}">Voir le détail</a> ·
+        <a href="/executions">Historique complet</a>
+      {% else %}
+        <p>Aucune exécution pour le moment.</p>
+      {% endif %}
+    </div>
   </main>
 </body>
 </html>

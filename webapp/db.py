@@ -57,6 +57,25 @@ def init_connecteurs_table():
         conn.close()
 
 
+def init_executions_table():
+    conn = get_connection()
+    try:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS executions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date_debut TEXT NOT NULL,
+                date_fin TEXT,
+                statut TEXT NOT NULL CHECK(statut IN ('en_cours', 'termine', 'erreur')),
+                score_global REAL,
+                details_json TEXT,
+                erreurs TEXT
+            )
+        """)
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def chiffrer_secrets(secrets: dict) -> str:
     """Sérialise puis chiffre les champs secrets en un blob unique."""
     return get_fernet().encrypt(json.dumps(secrets).encode()).decode()
@@ -170,5 +189,74 @@ def enregistrer_resultat_test(connecteur_id: int, statut: str):
             (datetime.now(timezone.utc).isoformat(), statut, connecteur_id),
         )
         conn.commit()
+    finally:
+        conn.close()
+
+
+# ─── Exécutions (cycles de collecte + scoring) ───────────────────────────────
+
+def creer_execution() -> int:
+    """Crée une exécution en statut 'en_cours' et retourne son id, avant même
+    de lancer la collecte — pour que /executions puisse la montrer tout de
+    suite, y compris si le processus plante en cours de route."""
+    conn = get_connection()
+    try:
+        cur = conn.execute(
+            "INSERT INTO executions (date_debut, statut) VALUES (?, ?)",
+            (datetime.now(timezone.utc).isoformat(), "en_cours"),
+        )
+        conn.commit()
+        return cur.lastrowid
+    finally:
+        conn.close()
+
+
+def terminer_execution(execution_id: int, statut: str, score_global: Optional[float],
+                        details: dict, erreurs: Optional[str]):
+    conn = get_connection()
+    try:
+        conn.execute(
+            "UPDATE executions SET date_fin = ?, statut = ?, score_global = ?, "
+            "details_json = ?, erreurs = ? WHERE id = ?",
+            (
+                datetime.now(timezone.utc).isoformat(),
+                statut,
+                score_global,
+                json.dumps(details, ensure_ascii=False),
+                erreurs,
+                execution_id,
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def lister_executions() -> list[dict]:
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT id, date_debut, date_fin, statut, score_global, erreurs "
+            "FROM executions ORDER BY id DESC"
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def derniere_execution() -> Optional[dict]:
+    executions = lister_executions()
+    return executions[0] if executions else None
+
+
+def obtenir_execution(execution_id: int) -> Optional[dict]:
+    conn = get_connection()
+    try:
+        row = conn.execute("SELECT * FROM executions WHERE id = ?", (execution_id,)).fetchone()
+        if row is None:
+            return None
+        d = dict(row)
+        d["details"] = json.loads(d["details_json"]) if d["details_json"] else None
+        return d
     finally:
         conn.close()

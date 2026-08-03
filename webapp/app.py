@@ -12,6 +12,7 @@ committés, voir .gitignore).
 """
 
 import sqlite3
+import threading
 from pathlib import Path
 
 import bcrypt
@@ -23,6 +24,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 import db
 import schemas_connecteurs
+import scan_runner
 import test_connexion
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -43,6 +45,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 
 db.init_connecteurs_table()
+db.init_executions_table()
 
 
 def verifier_identifiants(username: str, password: str) -> bool:
@@ -96,7 +99,9 @@ def afficher_dashboard(request: Request):
     user = request.session.get("user")
     if not user:
         return RedirectResponse(url="/login")
-    return templates.TemplateResponse(request, "dashboard.html", {"user": user})
+    return templates.TemplateResponse(
+        request, "dashboard.html", {"user": user, "derniere": db.derniere_execution()}
+    )
 
 
 # ─── Connecteurs ──────────────────────────────────────────────────────────────
@@ -210,3 +215,31 @@ def tester_connecteur_route(request: Request, connecteur_id: int):
     )
     db.enregistrer_resultat_test(connecteur_id, f"{'OK' if ok else 'ECHEC'} — {message}")
     return RedirectResponse(url="/connecteurs", status_code=303)
+
+
+# ─── Exécutions (collecte + scoring) ──────────────────────────────────────────
+
+@app.post("/executions/lancer")
+def lancer_execution(request: Request):
+    if not request.session.get("user"):
+        return RedirectResponse(url="/login")
+    execution_id = db.creer_execution()
+    threading.Thread(target=scan_runner.executer_scan, args=(execution_id,), daemon=True).start()
+    return RedirectResponse(url="/executions", status_code=303)
+
+
+@app.get("/executions")
+def liste_executions(request: Request):
+    if not request.session.get("user"):
+        return RedirectResponse(url="/login")
+    return templates.TemplateResponse(request, "executions_liste.html", {"executions": db.lister_executions()})
+
+
+@app.get("/executions/{execution_id}")
+def detail_execution(request: Request, execution_id: int):
+    if not request.session.get("user"):
+        return RedirectResponse(url="/login")
+    execution = db.obtenir_execution(execution_id)
+    if execution is None:
+        return RedirectResponse(url="/executions")
+    return templates.TemplateResponse(request, "execution_detail.html", {"execution": execution})

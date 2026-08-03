@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <title>Exécution #{{ execution.id }} — NIS2/ReCyF Dashboard</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <span>Exécution #{{ execution.id }}</span>
+    <div>
+      <a href="/executions">Historique</a>
+      <a href="/dashboard">Tableau de bord</a>
+      <a href="/logout">Déconnexion</a>
+    </div>
+  </header>
+  <main>
+    <p>Début : {{ execution.date_debut }} — Fin : {{ execution.date_fin or "—" }}</p>
+    <p>Statut : <strong>{{ execution.statut }}</strong></p>
+
+    {% if execution.erreurs %}
+    <div class="bloc-erreurs">
+      <h3>Connecteurs en échec pendant ce cycle</h3>
+      <pre>{{ execution.erreurs }}</pre>
+    </div>
+    {% endif %}
+
+    {% if execution.details and execution.details.score %}
+    <h2>Score global : {{ execution.details.score.score_global }} %</h2>
+
+    {% set bloc_courant = namespace(nom=None) %}
+    {% for o in execution.details.objectifs %}
+      {% if o.bloc != bloc_courant.nom %}
+        {% if bloc_courant.nom is not none %}</table>{% endif %}
+        {% set bloc_courant.nom = o.bloc %}
+        <h3>{{ o.bloc }}</h3>
+        <table class="connecteurs">
+          <thead><tr><th>ID</th><th>Objectif</th><th>Statut</th><th>Source</th><th>Justification</th></tr></thead>
+      {% endif %}
+      <tr class="statut-{{ o.statut | replace(' ', '-') | replace('é', 'e') | lower }}">
+        <td>{{ o.id }}</td>
+        <td>{{ o.libelle }}</td>
+        <td>{{ o.statut }}</td>
+        <td>{{ o.source or "—" }}</td>
+        <td>{{ o.justification }}</td>
+      </tr>
+    {% endfor %}
+    </table>
+    {% elif execution.details %}
+    <pre>{{ execution.details }}</pre>
+    {% endif %}
+  </main>
+</body>
+</html>

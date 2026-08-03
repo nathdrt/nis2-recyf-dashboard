@@ -174,3 +174,35 @@ table.connecteurs td {
   border-left: 2px solid #334155;
   padding-left: 1rem;
 }
+
+.bloc-erreurs {
+  background: #3f1d1d;
+  border: 1px solid var(--erreur);
+  border-radius: 0.3rem;
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.bloc-erreurs pre {
+  white-space: pre-wrap;
+  margin: 0.5rem 0 0;
+}
+
+table.connecteurs {
+  margin-bottom: 2rem;
+}
+
+tr.statut-couvert td:nth-child(3) { color: #4ade80; }
+tr.statut-partiel td:nth-child(3) { color: #facc15; }
+tr.statut-non-vérifiable---source-ambiguë td:nth-child(3),
+tr.statut-non-verifiable---source-ambigue td:nth-child(3) { color: #fb923c; }
+tr.statut-non-couvert---connecteur-à-venir td:nth-child(3),
+tr.statut-non-couvert---connecteur-a-venir td:nth-child(3),
+tr.statut-non-couvert---action-manuelle-requise td:nth-child(3) { color: #94a3b8; }
+
+.derniere-execution {
+  background: var(--box);
+  padding: 1rem 1.5rem;
+  border-radius: 0.5rem;
+  margin: 1rem 0;
+}
