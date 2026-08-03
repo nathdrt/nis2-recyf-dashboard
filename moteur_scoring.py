@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Moteur de scoring ReCyF V1
+Moteur de scoring ReCyF V2
 Lit les fichiers produits par les connecteurs et évalue la conformité
 objectif par objectif selon le référentiel ReCyF de l'ANSSI.
 
@@ -9,8 +9,9 @@ document de travail. Les identifiants utilisés ici (GOV-x, IDE-x, etc.)
 sont des codes fonctionnels stables pour ce projet, volontairement génériques
 plutôt que liés à une version figée du document ANSSI.
 
-V1 — données couvertes : GLPI (inventaire), Wazuh Manager (agents),
-                          Wazuh Indexer (alertes de sécurité 24h).
+V2 — données couvertes : GLPI (inventaire), Wazuh Manager (agents),
+                          Wazuh Indexer (alertes de sécurité 24h),
+                          OpenVAS/Greenbone (résultats de scan de vulnérabilités).
 """
 
 import json
@@ -29,14 +30,18 @@ class Statut(str, Enum):
     PARTIEL              = "Partiel"
     NON_COUVERT_CONNECTEUR = "Non couvert - connecteur à venir"
     NON_COUVERT_MANUEL   = "Non couvert - action manuelle requise"
+    NON_VERIFIABLE       = "Non vérifiable - source ambiguë"
 
 
 # Contribution au score global (sur 1.0)
+# NON_VERIFIABLE pèse 0.0 comme les statuts non couverts : une source ambiguë
+# ne doit JAMAIS faire progresser le score, même par accident.
 POIDS = {
     Statut.COUVERT:               1.0,
     Statut.PARTIEL:               0.5,
     Statut.NON_COUVERT_CONNECTEUR: 0.0,
     Statut.NON_COUVERT_MANUEL:     0.0,
+    Statut.NON_VERIFIABLE:         0.0,
 }
 
 # Libellé court pour le tableau terminal
@@ -45,6 +50,7 @@ LABEL_COURT = {
     Statut.PARTIEL:               "Partiel           ",
     Statut.NON_COUVERT_CONNECTEUR: "Non couvert (tech)",
     Statut.NON_COUVERT_MANUEL:     "Non couvert (doc) ",
+    Statut.NON_VERIFIABLE:         "Non vérifiable    ",
 }
 
 
@@ -130,9 +136,75 @@ def analyser_alertes(data: Optional[dict]) -> dict:
     }
 
 
+def analyser_vulnerabilites(data: Optional[dict]) -> dict:
+    """
+    Extrait les métriques utiles de vulnerabilites_openvas.json.
+
+    Le connecteur OpenVAS ajoute un champ "avertissement" quand
+    nombre_taches == 0 de façon ambiguë (voir NOTES_OPENVAS.md) : le rôle
+    Observer de connecteur-api ne peut pas distinguer "aucun scan n'existe"
+    de "un scan existe mais n'a pas été partagé en observer". Ce cas est
+    remonté ici comme "ambigu", jamais comme une absence de vulnérabilité.
+    """
+    if not data:
+        return {"disponible": False, "ambigu": False}
+    if "avertissement" in data:
+        return {
+            "disponible":          True,
+            "ambigu":              True,
+            "message_avertissement": data["avertissement"],
+            "date_extraction":     data.get("date_extraction"),
+        }
+    # Nombre d'hôtes distincts réellement couverts par le scan — calculé à partir
+    # des résultats individuels (champ "hote"), pas supposé. Un scan qui ne
+    # couvre qu'une seule machine ne peut pas prouver un durcissement ou une
+    # segmentation à l'échelle du parc, quel que soit le nombre de résultats.
+    resultats = data.get("resultats", [])
+    hotes = {r.get("hote") for r in resultats if r.get("hote")}
+
+    return {
+        "disponible":                  True,
+        "ambigu":                      False,
+        "nombre_taches":               data.get("nombre_taches", 0),
+        "nombre_resultats":            data.get("nombre_resultats", 0),
+        "resultats_cvss_eleve_ou_plus": data.get("resultats_cvss_eleve_ou_plus", 0),
+        "resume_par_menace":           data.get("resume_par_menace", {}),
+        "nb_hotes_scannes":            len(hotes),
+        "date_extraction":             data.get("date_extraction"),
+    }
+
+
 # ─── Évaluation objectif par objectif ────────────────────────────────────────
 
-def evaluer(inv: dict, agt: dict, alt: dict) -> list[ObjectifReCyF]:
+def statut_openvas_indisponible(vul: dict) -> Optional[tuple[Statut, str]]:
+    """
+    Statut/justification communs quand la source OpenVAS ne peut pas être
+    exploitée pour faire progresser un objectif. Retourne None quand les
+    données sont exploitables (scan réel, nombre_taches > 0 sans ambiguïté).
+    """
+    if not vul["disponible"]:
+        return (
+            Statut.NON_COUVERT_CONNECTEUR,
+            "vulnerabilites_openvas.json absent. Relancer connecteur_openvas.py.",
+        )
+    if vul["ambigu"]:
+        return (
+            Statut.NON_VERIFIABLE,
+            f"Source OpenVAS ambiguë pour ce cycle : {vul['message_avertissement']}",
+        )
+    if vul["nombre_taches"] == 0:
+        # Ne devrait pas arriver (nombre_taches==0 sans le champ "avertissement"
+        # du connecteur) — filet de sécurité pour ne jamais interpréter un 0
+        # comme "aucune vulnérabilité" par défaut.
+        return (
+            Statut.NON_VERIFIABLE,
+            "Aucune tâche de scan trouvée, sans avertissement explicite du "
+            "connecteur — état incohérent, à vérifier manuellement.",
+        )
+    return None
+
+
+def evaluer(inv: dict, agt: dict, alt: dict, vul: dict) -> list[ObjectifReCyF]:
     """
     Retourne la liste des objectifs ReCyF évalués.
     Règle fondamentale : on ne marque JAMAIS "Couvert" quelque chose
@@ -242,23 +314,84 @@ def evaluer(inv: dict, agt: dict, alt: dict) -> list[ObjectifReCyF]:
         statut=Statut.NON_COUVERT_MANUEL,
         justification="Nécessite un audit IAM (comptes, droits, MFA). Aucun connecteur IAM disponible en V1.",
     ))
+    base_openvas = statut_openvas_indisponible(vul)
+
+    if base_openvas:
+        statut_pro2, just_pro2 = base_openvas
+        statut_pro3, just_pro3 = base_openvas
+        statut_pro4, just_pro4 = base_openvas
+    else:
+        nb_taches = vul["nombre_taches"]
+        nb_res    = vul["nombre_resultats"]
+        nb_eleves = vul["resultats_cvss_eleve_ou_plus"]
+        nb_hotes  = vul["nb_hotes_scannes"]
+
+        # PRO-4 : gestion des vulnérabilités — objectif le plus directement lié
+        # aux résultats OpenVAS : un scan actif + absence de vulnérabilité
+        # CVSS élevée est la preuve la plus directe qu'on puisse avoir en V2.
+        if nb_eleves > 0:
+            statut_pro4 = Statut.PARTIEL
+            just_pro4 = (
+                f"Scan OpenVAS actif ({nb_taches} tâche(s), {nb_res} résultat(s)) : "
+                f"{nb_eleves} vulnérabilité(s) de sévérité élevée (CVSS ≥ 7) à corriger."
+            )
+        else:
+            statut_pro4 = Statut.COUVERT
+            just_pro4 = (
+                f"Scan OpenVAS actif ({nb_taches} tâche(s), {nb_res} résultat(s)), "
+                f"aucune vulnérabilité de sévérité élevée détectée sur le périmètre scanné."
+            )
+
+        # PRO-2 et PRO-3 : un scan de vulnérabilités donne une visibilité technique
+        # (bannières, ports, en-têtes HTTP...), mais un scan mono-hôte ne peut pas
+        # prouver un durcissement ou une segmentation à l'échelle du parc — le
+        # nombre d'hôtes réellement couverts est calculé dynamiquement (voir
+        # analyser_vulnerabilites), pas supposé. Le plafond se lève dès que
+        # plusieurs hôtes distincts sont couverts par le scan.
+        if nb_hotes <= 1:
+            statut_pro2 = Statut.PARTIEL
+            just_pro2 = (
+                f"Scan OpenVAS actif ({nb_res} résultat(s) technique(s) collecté(s)) sur "
+                f"{nb_hotes} hôte(s) : visibilité partielle (bannières, en-têtes HTTP...), mais "
+                f"un scan mono-hôte ne prouve pas un durcissement systématique du parc."
+            )
+            statut_pro3 = Statut.PARTIEL
+            just_pro3 = (
+                f"Scan OpenVAS actif ({nb_res} résultat(s)) sur {nb_hotes} hôte(s) : détection de "
+                f"ports/services en place, mais un scan mono-hôte ne prouve pas la segmentation "
+                f"réseau du parc."
+            )
+        elif nb_eleves > 0:
+            statut_pro2 = statut_pro3 = Statut.PARTIEL
+            just_pro2 = just_pro3 = (
+                f"Scan OpenVAS actif sur {nb_hotes} hôtes distincts ({nb_res} résultat(s)) : "
+                f"{nb_eleves} vulnérabilité(s) de sévérité élevée à corriger avant de considérer "
+                f"le durcissement/la segmentation comme acquis."
+            )
+        else:
+            statut_pro2 = statut_pro3 = Statut.COUVERT
+            just_pro2 = just_pro3 = (
+                f"Scan OpenVAS actif sur {nb_hotes} hôtes distincts ({nb_res} résultat(s)), "
+                f"aucune vulnérabilité de sévérité élevée détectée sur le périmètre scanné."
+            )
+
     obj.append(ObjectifReCyF(
         id="PRO-2", bloc="Protection",
         libelle="Durcissement des systèmes et des configurations",
-        statut=Statut.NON_COUVERT_CONNECTEUR,
-        justification="Nécessite un scanner de conformité (OpenSCAP, CIS-CAT) ou OpenVAS. Prévu V2.",
+        statut=statut_pro2, justification=just_pro2,
+        source="vulnerabilites_openvas.json",
     ))
     obj.append(ObjectifReCyF(
         id="PRO-3", bloc="Protection",
         libelle="Sécurité réseau et segmentation",
-        statut=Statut.NON_COUVERT_CONNECTEUR,
-        justification="Nécessite un audit réseau ou scanner de vulnérabilités (OpenVAS). Prévu V2.",
+        statut=statut_pro3, justification=just_pro3,
+        source="vulnerabilites_openvas.json",
     ))
     obj.append(ObjectifReCyF(
         id="PRO-4", bloc="Protection",
         libelle="Gestion des vulnérabilités et des correctifs",
-        statut=Statut.NON_COUVERT_CONNECTEUR,
-        justification="Nécessite les données OpenVAS (scan de vulnérabilités). Connecteur à développer en V2.",
+        statut=statut_pro4, justification=just_pro4,
+        source="vulnerabilites_openvas.json",
     ))
     obj.append(ObjectifReCyF(
         id="PRO-5", bloc="Protection",
@@ -418,7 +551,7 @@ def afficher_rapport(objectifs: list[ObjectifReCyF], score: dict):
     LARGEUR = 100
     print()
     print("=" * LARGEUR)
-    print("  RAPPORT DE CONFORMITÉ ReCyF — V1")
+    print("  RAPPORT DE CONFORMITÉ ReCyF — V2")
     print(f"  Généré le : {datetime.now().strftime('%d/%m/%Y %H:%M')}")
     print("=" * LARGEUR)
 
@@ -465,7 +598,8 @@ def afficher_rapport(objectifs: list[ObjectifReCyF], score: dict):
     for o in objectifs:
         icone = {"Couvert": "✓", "Partiel": "~",
                  "Non couvert - connecteur à venir": "○",
-                 "Non couvert - action manuelle requise": "✗"}[o.statut.value]
+                 "Non couvert - action manuelle requise": "✗",
+                 "Non vérifiable - source ambiguë": "⚠"}[o.statut.value]
         print(f"\n  [{icone}] {o.id} — {o.libelle}")
         # Découpe la justification pour ne pas dépasser 94 caractères par ligne
         mots, ligne = o.justification.split(), ""
@@ -486,7 +620,7 @@ def afficher_rapport(objectifs: list[ObjectifReCyF], score: dict):
 
 def sauvegarder(objectifs: list[ObjectifReCyF], score: dict, chemin: str):
     rapport = {
-        "version":         "1.0",
+        "version":         "2.0",
         "date_generation": datetime.now(timezone.utc).isoformat(),
         "score":           score,
         "objectifs": [
@@ -507,12 +641,14 @@ def main():
     inv_data = charger("inventaire.json")
     agt_data = charger("agents_wazuh.json")
     alt_data = charger("alertes_wazuh.json")
+    vul_data = charger("vulnerabilites_openvas.json")
 
     inv = analyser_inventaire(inv_data)
     agt = analyser_agents(agt_data)
     alt = analyser_alertes(alt_data)
+    vul = analyser_vulnerabilites(vul_data)
 
-    objectifs = evaluer(inv, agt, alt)
+    objectifs = evaluer(inv, agt, alt, vul)
     score     = calculer_score(objectifs)
 
     afficher_rapport(objectifs, score)
