@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <title>{{ "Modifier" if mode == "edition" else "Ajouter" }} un connecteur</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <span>{{ "Modifier" if mode == "edition" else "Ajouter" }} un connecteur</span>
+    <a href="/connecteurs">Retour</a>
+  </header>
+  <main>
+    <form method="post"
+          action="{{ ('/connecteurs/' ~ connecteur.id ~ '/modifier') if mode == 'edition' else '/connecteurs/nouveau' }}"
+          class="form-connecteur">
+
+      <label>
+        Nom
+        <input type="text" name="nom" required value="{{ connecteur.nom if connecteur else '' }}">
+      </label>
+
+      {% if mode == "edition" %}
+        <input type="hidden" name="type" value="{{ connecteur.type }}">
+        <p>Type : <strong>{{ schemas[connecteur.type].libelle }}</strong> (non modifiable)</p>
+      {% else %}
+        <label>
+          Type de connecteur
+          <select name="type" id="type-select" onchange="afficherChamps()" required>
+            <option value="" disabled selected>— Choisir —</option>
+            {% for cle, s in schemas.items() %}
+            <option value="{{ cle }}">{{ s.libelle }}</option>
+            {% endfor %}
+          </select>
+        </label>
+      {% endif %}
+
+      {% for cle, schema in schemas.items() %}
+        {% if mode == "creation" or connecteur.type == cle %}
+        <div class="champs-type" data-type="{{ cle }}" {% if mode == 'creation' %}style="display:none"{% endif %}>
+          {% for champ in schema.champs_publics %}
+          <label>
+            {{ champ.label }}
+            <input type="{{ 'number' if champ.type == 'number' else 'text' }}"
+                   name="{{ cle }}__{{ champ.nom }}"
+                   value="{{ (connecteur.config_publique.get(champ.nom, champ.defaut|default(''))) if connecteur else champ.defaut|default('') }}">
+          </label>
+          {% endfor %}
+          {% for champ in schema.champs_secrets %}
+          <label>
+            {{ champ.label }}
+            <input type="password" name="{{ cle }}__{{ champ.nom }}"
+                   placeholder="{{ '•••••••• (laisser vide pour ne pas changer)' if mode == 'edition' else '' }}"
+                   autocomplete="new-password">
+          </label>
+          {% endfor %}
+        </div>
+        {% endif %}
+      {% endfor %}
+
+      <button type="submit">{{ "Enregistrer" if mode == "edition" else "Créer" }}</button>
+    </form>
+  </main>
+
+  <script>
+    function afficherChamps() {
+      var type = document.getElementById('type-select').value;
+      document.querySelectorAll('.champs-type').forEach(function (div) {
+        div.style.display = (div.dataset.type === type) ? 'block' : 'none';
+      });
+    }
+  </script>
+</body>
+</html>

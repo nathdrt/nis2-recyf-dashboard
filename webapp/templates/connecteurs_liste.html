@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <title>Connecteurs — NIS2/ReCyF Dashboard</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <span>Connecteurs</span>
+    <div>
+      <a href="/dashboard">Tableau de bord</a>
+      <a href="/logout">Déconnexion</a>
+    </div>
+  </header>
+  <main>
+    <div class="actions">
+      <a class="bouton" href="/connecteurs/nouveau">+ Ajouter un connecteur</a>
+    </div>
+    <table class="connecteurs">
+      <thead>
+        <tr>
+          <th>Type</th><th>Nom</th><th>Actif</th><th>Dernier test</th><th>Statut</th><th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in connecteurs %}
+        <tr>
+          <td>{{ c.libelle_type }}</td>
+          <td>{{ c.nom }}</td>
+          <td>{{ "Oui" if c.actif else "Non" }}</td>
+          <td>{{ c.derniere_execution or "—" }}</td>
+          <td>{{ c.dernier_statut or "Jamais testé" }}</td>
+          <td class="actions-ligne">
+            <form method="post" action="/connecteurs/{{ c.id }}/tester" class="inline">
+              <button type="submit">Tester</button>
+            </form>
+            <a href="/connecteurs/{{ c.id }}/modifier">Modifier</a>
+            <form method="post" action="/connecteurs/{{ c.id }}/supprimer" class="inline"
+                  onsubmit="return confirm('Supprimer le connecteur « {{ c.nom }} » ?');">
+              <button type="submit" class="danger">Supprimer</button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6">Aucun connecteur configuré.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </main>
+</body>
+</html>
